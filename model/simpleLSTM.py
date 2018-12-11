@@ -53,8 +53,7 @@ class EmotionSimpleLSTM(Model):
         all_turns_mask = get_text_field_mask(all_turns)
         all_turns_word_embeddings = self.word_embedding(all_turns)
         all_turns_sentiment_embeddings = self.lexicon_embedding(all_turns["tokens"])
-        # all_turns_embeddings = torch.cat([all_turns_word_embeddings, all_turns_sentiment_embeddings], dim=2)
-        all_turns_embeddings = all_turns_word_embeddings
+        all_turns_embeddings = torch.cat([all_turns_word_embeddings, all_turns_sentiment_embeddings], dim=2)
         encoded_all_turns = self.encoder(all_turns_embeddings, all_turns_mask)
         label_logits = self.hidden2out(encoded_all_turns)
         label_logits = F.softmax(label_logits, dim=1)
