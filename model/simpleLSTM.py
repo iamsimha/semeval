@@ -22,57 +22,41 @@ torch.manual_seed(10)
 
 LEXICON_PATH = {"emotion_lexicon": "/Users/talurj/Documents/Research/MyResearch/SemEval/Emoconnect/lexicons/NRC-Sentiment-Emotion-Lexicons/NRC-Sentiment-Emotion-Lexicons/NRC-Emotion-Lexicon-v0.92/NRC-Emotion-Lexicon-Wordlevel-v0.92.txt",
 "affect_lexicon": "/Users/talurj/Documents/Research/MyResearch/SemEval/Emoconnect/lexicons/NRC-Sentiment-Emotion-Lexicons/NRC-Sentiment-Emotion-Lexicons/NRC-Affect-Intensity-Lexicon/NRC-AffectIntensity-Lexicon.txt"}
-# allennlp train /Users/talurj/Documents/Research/MyResearch/SemEval/Emoconnect/myallennlp/config/biLSTMconfig.jsonnet -s /Users/talurj/Documents/Research/MyResearch/SemEval/Emoconnect/models/allennlp/sentiment-bi-lstm/ --include-package myallennlp
-# allennlp predict /Users/talurj/Documents/Research/MyResearch/SemEval/Emoconnect/models/allennlp/sentiment-bi-lstm/model.tar.gz /Users/talurj/Documents/Research/MyResearch/SemEval/Emoconnect/starterkitdata/devwithoutlabels.txt --output-file /Users/talurj/Documents/Research/MyResearch/SemEval/Emoconnect/predictions/bi-lstm-sentiment.txt --include-package myallennlp --predictor emotion_predictor --use-dataset-reader --silent
 
 def cross_entropy_loss(predictions, gnd_truth):
     #TODO use mask for computing loss
     loss = torch.nn.CrossEntropyLoss(weight=torch.tensor([0.1, 0.3, 0.3, 0.3]))
     return loss(predictions, gnd_truth)
 
-@Model.register("bi-sentence-lstm")
-class EmotionBiLSTM(Model):
+@Model.register("simple-bi-lstm")
+class EmotionSimpleLSTM(Model):
     def __init__(self, 
                 word_embeddings: TextFieldEmbedder,
-                encoder1: Seq2VecEncoder,
-                encoder2: Seq2VecEncoder,
-                similarity_function: SimilarityFunction,
+                encoder: Seq2VecEncoder,
                 vocab: Vocabulary) -> None:
 
         super().__init__(vocab)
         self.word_embedding = word_embeddings
-        self.enc_turn1and2 = encoder1
-        self.enc_turn3 = encoder2
-        self.matrix_attention = LegacyMatrixAttention(similarity_function)
+        self.encoder = encoder
         self.accuracy = MicroMetrics(vocab)
         self.label_index_to_label = self.vocab.get_index_to_token_vocabulary('labels')
-        final_concatenated_dimension = 4 * self.enc_turn1and2.get_output_dim()
-        self.hidden2out = torch.nn.Linear(in_features=final_concatenated_dimension, out_features=vocab.get_vocab_size("labels"))
+        self.hidden2out = torch.nn.Linear(in_features=self.encoder.get_output_dim(), out_features=vocab.get_vocab_size("labels"))
         self.lexicon_embedding = LexiconEmbedder(LEXICON_PATH, self.vocab)
 
 
     def forward(self,
-                turn1and2: Dict[str, torch.Tensor],
-                turn3: Dict[str, torch.Tensor],
+                all_turns: Dict[str, torch.Tensor],
                 conversation_id: str,
                 turns: str,
                 labels: torch.Tensor=None):
         #TODO Looku up reverse embedding of padded sequences
-        turn1and2_mask = get_text_field_mask(turn1and2)
-        turn3_mask = get_text_field_mask(turn3)
-        turn1and2_word_embeddings = self.word_embedding(turn1and2)
-        turn3_word_embeddings = self.word_embedding(turn3)
-        turn1and2_sentiment_embeddings = self.lexicon_embedding(turn1and2["tokens"])
-        turn3_sentiment_embeddings = self.lexicon_embedding(turn3["tokens"])
-        turn1and2_embeddings = torch.cat([turn1and2_word_embeddings, turn1and2_sentiment_embeddings], dim=2)
-        turn3_embeddings = torch.cat([turn3_word_embeddings, turn3_sentiment_embeddings], dim=2)
-
-
-        encoded_turn1and2 = self.enc_turn1and2(turn1and2_embeddings, turn1and2_mask)
-        encoded_turn3 = self.enc_turn3(turn3_embeddings, turn3_mask)
-        concatenated_vector = torch.cat([encoded_turn1and2, encoded_turn3, encoded_turn1and2*encoded_turn3, encoded_turn1and2 + encoded_turn3], dim=1)
-        # self.matrix_attention = self.matrix_attention(encoded_turn1and2, encoded_turn3)
-        label_logits = self.hidden2out(concatenated_vector)
+        all_turns_mask = get_text_field_mask(all_turns)
+        all_turns_word_embeddings = self.word_embedding(all_turns)
+        all_turns_sentiment_embeddings = self.lexicon_embedding(all_turns["tokens"])
+        # all_turns_embeddings = torch.cat([all_turns_word_embeddings, all_turns_sentiment_embeddings], dim=2)
+        all_turns_embeddings = all_turns_word_embeddings
+        encoded_all_turns = self.encoder(all_turns_embeddings, all_turns_mask)
+        label_logits = self.hidden2out(encoded_all_turns)
         label_logits = F.softmax(label_logits, dim=1)
         output = {"prediction": [self.label_index_to_label[x] for x in label_logits.argmax(dim=1).numpy()],
                     "ids": [x["ids"] for x in conversation_id],

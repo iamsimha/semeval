@@ -5,15 +5,15 @@ from allennlp.data.tokenizers import Token
 
 from allennlp.data import Instance
 from allennlp.data.fields import TextField, SequenceLabelField, LabelField, metadata_field
-
+from collections import Counter
 import numpy as np
-
+import os
 from ekphrasis.classes.preprocessor import TextPreProcessor
 from ekphrasis.classes.tokenizer import SocialTokenizer
 from ekphrasis.dicts.emoticons import emoticons
 
 np.random.seed(10)
-
+WORD_NORMALIZER_PATH = "/Users/talurj/Documents/Research/MyResearch/SemEval/Emoconnect/myallennlp/dataset_reader/spell_normalizer.txt"
 def replace_emoji(line, emoji_map):
     result = ""
     for c in line:
@@ -68,12 +68,14 @@ class EmoConcatDataReader(DatasetReader):
     def __init__(self, token_indexers: Dict[str, TokenIndexer] = None) -> None:
         super().__init__(lazy=False)
         self.token_indexers = token_indexers or {"tokens": SingleIdTokenIndexer()}
+        self.text_processor = get_text_processor().pre_process_doc
+
 
     def text_to_instance(self, tokens: List[Token], conversation_id, turns: List[str], tag: List[str] = None) -> Instance:
         conversation = TextField(tokens, self.token_indexers)
         conversation_id = metadata_field.MetadataField({'ids': conversation_id})
         turns = metadata_field.MetadataField({'turns': turns})
-        fields = {"conversation": conversation, "conversation_id": conversation_id, "turns": turns}
+        fields = {"all_turns": conversation, "conversation_id": conversation_id, "turns": turns}
         if tag:
             label_field = LabelField(label=tag)
             fields["labels"] = label_field
@@ -89,13 +91,16 @@ class EmoConcatDataReader(DatasetReader):
                     _id, turn1, turn2, turn3, label = contents
                 else:
                     _id, turn1, turn2, turn3 = contents
-                turns = [turn1, turn2, turn3]
+                gnd_turns = [turn1, turn2, turn3]
+                turns = [" ".join(self.text_processor(turn1)),
+                        " ".join(self.text_processor(turn2)),
+                        " ".join(self.text_processor(turn3))]
                 sentence = " <eos> ".join(turns)
                 sentence = sentence.strip().split()
                 if label is not None:
-                    yield self.text_to_instance([Token(word) for word in sentence], _id, "\t".join(turns), label)
+                    yield self.text_to_instance([Token(word) for word in sentence], _id, "\t".join(gnd_turns), label)
                 else:
-                    yield self.text_to_instance([Token(word) for word in sentence],_id, "\t".join(turns))
+                    yield self.text_to_instance([Token(word) for word in sentence],_id, "\t".join(gnd_turns))
 
 @DatasetReader.register("bi-sentence-reader")
 class EmoBiSentenceDataReader(DatasetReader):
@@ -108,6 +113,11 @@ class EmoBiSentenceDataReader(DatasetReader):
         super().__init__(lazy=False)
         self.token_indexers = token_indexers or {"tokens": SingleIdTokenIndexer()}
         self.text_processor = get_text_processor().pre_process_doc
+        self.spell_corrector = {}
+        with open(WORD_NORMALIZER_PATH) as f:
+            for line in f:
+                old_spelling, new_spelling = line.split("\t")
+                self.spell_corrector[old_spelling] = new_spelling
 
     def text_to_instance(self, turn1and2: List[Token], turn3: List[Token], conversation_id, turns: List[str], label: List[str] = None) -> Instance:
         turn1and2  = TextField(turn1and2, self.token_indexers)
@@ -121,6 +131,7 @@ class EmoBiSentenceDataReader(DatasetReader):
         return Instance(fields)
 
     def _read(self, file_path: str) -> Iterator[Instance]:
+        c = Counter()
         with open(file_path) as f:
             label = None
             _ = f.readline()
@@ -134,7 +145,16 @@ class EmoBiSentenceDataReader(DatasetReader):
                 turn1 = " ".join(self.text_processor(turn1))
                 turn2 = " ".join(self.text_processor(turn2))
                 turn3 = " ".join(self.text_processor(turn3))
-                
+                # turn1 = " ".join([self.spell_corrector[word] if word in self.spell_corrector else word for word in turn1.split()])
+                # turn2 = " ".join([self.spell_corrector[word] if word in self.spell_corrector else word for word in turn2.split()])
+                # turn3 = " ".join([self.spell_corrector[word] if word in self.spell_corrector else word for word in turn3.split()])
+                for word in turn1.split():
+                    c.update({word:1})
+                for word in turn2.split():
+                    c.update({word:1})
+                for word in turn3.split():
+                    c.update({word:1})
+
                 turns = [turn1, turn2]
                 turn1and2 = " <eos> ".join(turns)
 
@@ -147,6 +167,9 @@ class EmoBiSentenceDataReader(DatasetReader):
                     yield self.text_to_instance(turn1and2_tokens, turn3_tokens, _id, gnd_turns, label)
                 else:
                     yield self.text_to_instance(turn1and2_tokens, turn3_tokens, _id, gnd_turns)
+            with open("__" + os.path.basename(file_path), "w") as f:
+                for word, freq in c.most_common():
+                    f.write(str(word) + "\t" + str(freq) + "\n")
 
 @DatasetReader.register("tri-sentence-reader")
 class EmoBiSentenceDataReader(DatasetReader):

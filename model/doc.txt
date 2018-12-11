@@ -1,0 +1,1 @@
+Sentence Embedding + word2 vec + pooling strategy : 0.6822429906542057, Stable
