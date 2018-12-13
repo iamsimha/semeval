@@ -37,6 +37,7 @@ class LexiconEmbedder(object):
             for word in set(self.token_to_index.keys()).difference(all_words):
                 f.write(word + "\n")
         return Embedding.from_pretrained(torch.tensor(embedding.astype(np.float32)))
+
     def get_affect_intensity_embedding(self, fname):
         unique_emotions = self.read_unique_emotions(fname, 2)
         emotion_to_id = {emotion:i for i, emotion in enumerate(unique_emotions)}
@@ -50,6 +51,7 @@ class LexiconEmbedder(object):
                     if word in self.token_to_index:
                         embedding[self.token_to_index[word], emotion_to_id[emotion]] = float(score.strip())
         return Embedding.from_pretrained(torch.tensor(embedding.astype(np.float32)))
+
     def __call__(self, inputs):
         return torch.cat([self.emotion_embedding(inputs), self.affect_embedding(inputs)], dim=2)
         

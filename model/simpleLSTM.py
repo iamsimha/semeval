@@ -19,7 +19,7 @@ import torch.nn.functional as F
 import numpy as np
 
 torch.manual_seed(10)
-
+np.random.seed(10)
 LEXICON_PATH = {"emotion_lexicon": "/Users/talurj/Documents/Research/MyResearch/SemEval/Emoconnect/lexicons/NRC-Sentiment-Emotion-Lexicons/NRC-Sentiment-Emotion-Lexicons/NRC-Emotion-Lexicon-v0.92/NRC-Emotion-Lexicon-Wordlevel-v0.92.txt",
 "affect_lexicon": "/Users/talurj/Documents/Research/MyResearch/SemEval/Emoconnect/lexicons/NRC-Sentiment-Emotion-Lexicons/NRC-Sentiment-Emotion-Lexicons/NRC-Affect-Intensity-Lexicon/NRC-AffectIntensity-Lexicon.txt"}
 
@@ -42,6 +42,7 @@ class EmotionSimpleLSTM(Model):
         self.label_index_to_label = self.vocab.get_index_to_token_vocabulary('labels')
         self.hidden2out = torch.nn.Linear(in_features=self.encoder.get_output_dim(), out_features=vocab.get_vocab_size("labels"))
         self.lexicon_embedding = LexiconEmbedder(LEXICON_PATH, self.vocab)
+        self.dropout = nn.Dropout(p=0.1)
 
 
     def forward(self,
@@ -52,9 +53,10 @@ class EmotionSimpleLSTM(Model):
         #TODO Looku up reverse embedding of padded sequences
         all_turns_mask = get_text_field_mask(all_turns)
         all_turns_word_embeddings = self.word_embedding(all_turns)
-        all_turns_sentiment_embeddings = self.lexicon_embedding(all_turns["tokens"])
-        all_turns_embeddings = torch.cat([all_turns_word_embeddings, all_turns_sentiment_embeddings], dim=2)
-        encoded_all_turns = self.encoder(all_turns_embeddings, all_turns_mask)
+        # all_turns_sentiment_embeddings = self.lexicon_embedding(all_turns["tokens"])
+        # all_turns_embeddings = torch.cat([all_turns_word_embeddings, all_turns_sentiment_embeddings], dim=2)
+        encoded_all_turns = self.encoder(all_turns_word_embeddings, all_turns_mask)
+        encoded_all_turns = self.dropout(encoded_all_turns)
         label_logits = self.hidden2out(encoded_all_turns)
         label_logits = F.softmax(label_logits, dim=1)
         output = {"prediction": [self.label_index_to_label[x] for x in label_logits.argmax(dim=1).numpy()],

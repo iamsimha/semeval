@@ -3,7 +3,7 @@ from allennlp.training.metrics.metric import Metric
 from keras.utils import to_categorical
 
 import warnings
-
+np.random.seed(10)
 @Metric.register("micro_emo_f1")
 class MicroMetrics(Metric):
     def __init__(self, vocab):
